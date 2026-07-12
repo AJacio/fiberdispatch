@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard, CalendarDays, Users, Building2, Search, Plus, X,
   Pencil, Trash2, Eye, CheckCircle2, Clock3, AlertTriangle, Phone,
@@ -41,7 +41,7 @@ const PRIORITY_META = {
 
 const pad = (n) => String(n).padStart(2, "0");
 const fmtDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const today = new Date(2026, 6, 12); // Sun Jul 12 2026
+const today = new Date(); // always reflects the real current date on load
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const todayStr = fmtDate(today);
 
@@ -62,6 +62,43 @@ let seedAppointments = [];
 /* ---------------------------------- helpers --------------------------------- */
 function buildingName(id, buildings) { return buildings.find((b) => b.id === id)?.name || "—"; }
 function techName(id, techs) { return techs.find((t) => t.id === id)?.name || "Unassigned"; }
+
+/* ------------------------------ local database ------------------------------ */
+// Lightweight persistence layer backed by the browser's localStorage. Each
+// piece of state (appointments, buildings, technicians, plans) is saved under
+// its own key and reloaded automatically the next time the app opens, so data
+// survives page refreshes and browser restarts on the same device. This is a
+// client-only "database" — there's no server, so data doesn't sync across
+// devices or browsers. Swap this hook out for real API calls if you add a
+// backend later.
+const DB_PREFIX = "fiberdispatch:";
+function usePersistentState(key, initialValue) {
+  const [state, setState] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(DB_PREFIX + key);
+      return raw ? JSON.parse(raw) : initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DB_PREFIX + key, JSON.stringify(state));
+    } catch {
+      // storage unavailable (private browsing, quota, etc.) — fail silently
+    }
+  }, [key, state]);
+  return [state, setState];
+}
+function clearLocalDatabase() {
+  try {
+    Object.keys(window.localStorage)
+      .filter((k) => k.startsWith(DB_PREFIX))
+      .forEach((k) => window.localStorage.removeItem(k));
+  } catch {
+    // ignore
+  }
+}
 
 function Badge({ label, color, bg }) {
   return (
@@ -96,9 +133,9 @@ function StatCard({ label, value, icon: Icon, accent, sub }) {
 export default function FiberDispatch() {
   const [dark, setDark] = useState(false);
   const [view, setView] = useState("dashboard");
-  const [appointments, setAppointments] = useState(seedAppointments);
-  const [buildings, setBuildings] = useState(seedBuildings);
-  const [techs, setTechs] = useState(seedTechs);
+  const [appointments, setAppointments] = usePersistentState("appointments", seedAppointments);
+  const [buildings, setBuildings] = usePersistentState("buildings", seedBuildings);
+  const [techs, setTechs] = usePersistentState("technicians", seedTechs);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -115,11 +152,12 @@ export default function FiberDispatch() {
   const [showBuildingForm, setShowBuildingForm] = useState(false);
   const [editingBuilding, setEditingBuilding] = useState(null);
   const [showTechForm, setShowTechForm] = useState(false);
-  const [plans, setPlans] = useState(seedPlans);
+  const [plans, setPlans] = usePersistentState("plans", seedPlans);
   const [showPlanForm, setShowPlanForm] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
   const [confirmDeletePlan, setConfirmDeletePlan] = useState(null);
   const [confirmDeleteBuilding, setConfirmDeleteBuilding] = useState(null);
+  const [confirmResetData, setConfirmResetData] = useState(false);
   const [rescheduling, setRescheduling] = useState(null);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
@@ -232,11 +270,14 @@ export default function FiberDispatch() {
             })}
           </nav>
         </div>
-        <div className="px-2">
+        <div className="px-2 space-y-2">
           <div className="rounded-xl p-3 text-xs" style={{ backgroundColor: C.inkSoft, color: "#8A94A6" }}>
             <p className="flex items-center gap-1.5 text-slate-300 font-medium mb-1"><Sparkles size={12} style={{ color: C.accentBright }} /> Signal check</p>
             {techs.filter((t) => t.status === "Available").length} technicians available today
           </div>
+          <button onClick={() => setConfirmResetData(true)} className="w-full text-left text-[11px] px-1 text-slate-500 hover:text-slate-300 transition-colors">
+            Reset local data
+          </button>
         </div>
       </aside>
 
@@ -430,6 +471,22 @@ export default function FiberDispatch() {
         <RescheduleModal appointment={rescheduling} techs={techs}
           onClose={() => setRescheduling(null)}
           onSave={(payload) => rescheduleAppointment(rescheduling.id, payload)}
+        />
+      )}
+      {confirmResetData && (
+        <ConfirmDialog
+          title="Reset all local data?"
+          body="This clears every schedule, building, technician, and plan saved in this browser. This can't be undone."
+          onCancel={() => setConfirmResetData(false)}
+          onConfirm={() => {
+            clearLocalDatabase();
+            setAppointments([]);
+            setBuildings([]);
+            setTechs([]);
+            setPlans(seedPlans);
+            setConfirmResetData(false);
+            showToast("Local data reset");
+          }}
         />
       )}
 
