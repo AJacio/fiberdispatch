@@ -3,7 +3,7 @@ import {
   LayoutDashboard, CalendarDays, Users, Building2, Search, Plus, X,
   Pencil, Trash2, Eye, CheckCircle2, Clock3, AlertTriangle, Phone,
   MapPin, ChevronLeft, ChevronRight, Sun, Moon, MessageCircle, Navigation2,
-  Wrench, Signal, ClipboardList, Filter, ArrowUpRight, Sparkles
+  Wrench, Signal, ClipboardList, Filter, ArrowUpRight, Sparkles, CalendarClock
 } from "lucide-react";
 
 /* ---------------------------------- tokens --------------------------------- */
@@ -50,7 +50,12 @@ const seedBuildings = [];
 const seedTechs = [];
 
 const svcTypes = ["New Installation", "Repair", "Relocation", "Upgrade"];
-const plans = ["Fiber 100 Mbps", "Fiber 300 Mbps", "Fiber 500 Mbps", "Fiber 1 Gbps"];
+const seedPlans = [
+  { id: "p1", name: "Fiber 100 Mbps" },
+  { id: "p2", name: "Fiber 300 Mbps" },
+  { id: "p3", name: "Fiber 500 Mbps" },
+  { id: "p4", name: "Fiber 1 Gbps" },
+];
 
 let seedAppointments = [];
 
@@ -108,7 +113,14 @@ export default function FiberDispatch() {
   const [calMonth, setCalMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [calSelected, setCalSelected] = useState(todayStr);
   const [showBuildingForm, setShowBuildingForm] = useState(false);
+  const [editingBuilding, setEditingBuilding] = useState(null);
   const [showTechForm, setShowTechForm] = useState(false);
+  const [plans, setPlans] = useState(seedPlans);
+  const [showPlanForm, setShowPlanForm] = useState(false);
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [confirmDeletePlan, setConfirmDeletePlan] = useState(null);
+  const [confirmDeleteBuilding, setConfirmDeleteBuilding] = useState(null);
+  const [rescheduling, setRescheduling] = useState(null);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
 
@@ -159,6 +171,14 @@ export default function FiberDispatch() {
     showToast(`Marked as ${status}`);
   }
 
+  function rescheduleAppointment(id, { date, time, tech }) {
+    setAppointments((prev) => prev.map((a) => (a.id === id
+      ? { ...a, date, time, tech, status: ["Cancelled", "No Show"].includes(a.status) ? "Scheduled" : a.status }
+      : a)));
+    setRescheduling(null);
+    showToast("Appointment rescheduled");
+  }
+
   function removeAppointment(id) {
     setAppointments((prev) => prev.filter((a) => a.id !== id));
     setConfirmDelete(null);
@@ -174,6 +194,7 @@ export default function FiberDispatch() {
     { id: "calendar", label: "Calendar", icon: CalendarDays },
     { id: "technicians", label: "Technicians", icon: Wrench },
     { id: "buildings", label: "Buildings", icon: Building2 },
+    { id: "plans", label: "Internet Plans", icon: Signal },
   ];
 
   return (
@@ -266,6 +287,7 @@ export default function FiberDispatch() {
               onEdit={(a) => { setEditing(a); setShowForm(true); }}
               onDelete={(a) => setConfirmDelete(a)}
               onComplete={(a) => setStatus(a.id, "Completed")}
+              onReschedule={(a) => setRescheduling(a)}
             />
           )}
 
@@ -280,6 +302,7 @@ export default function FiberDispatch() {
               onEdit={(a) => { setEditing(a); setShowForm(true); }}
               onDelete={(a) => setConfirmDelete(a)}
               onComplete={(a) => setStatus(a.id, "Completed")}
+              onReschedule={(a) => setRescheduling(a)}
             />
           )}
 
@@ -300,7 +323,19 @@ export default function FiberDispatch() {
           )}
 
           {view === "buildings" && (
-            <BuildingsView buildings={buildings} appointments={appointments} dark={dark} onAdd={() => setShowBuildingForm(true)} />
+            <BuildingsView buildings={buildings} appointments={appointments} dark={dark}
+              onAdd={() => { setEditingBuilding(null); setShowBuildingForm(true); }}
+              onEdit={(b) => { setEditingBuilding(b); setShowBuildingForm(true); }}
+              onDelete={(b) => setConfirmDeleteBuilding(b)}
+            />
+          )}
+
+          {view === "plans" && (
+            <PlansView plans={plans} appointments={appointments} dark={dark}
+              onAdd={() => { setEditingPlan(null); setShowPlanForm(true); }}
+              onEdit={(p) => { setEditingPlan(p); setShowPlanForm(true); }}
+              onDelete={(p) => setConfirmDeletePlan(p)}
+            />
           )}
         </main>
       </div>
@@ -308,7 +343,7 @@ export default function FiberDispatch() {
       {/* Modals */}
       {showForm && (
         <ScheduleFormModal
-          initial={editing} buildings={buildings} techs={techs}
+          initial={editing} buildings={buildings} techs={techs} plans={plans}
           onClose={() => { setShowForm(false); setEditing(null); }}
           onSave={upsertAppointment}
         />
@@ -319,6 +354,7 @@ export default function FiberDispatch() {
           onEdit={() => { setEditing(detail); setDetail(null); setShowForm(true); }}
           onComplete={() => { setStatus(detail.id, "Completed"); setDetail(null); }}
           onCancel={() => { setStatus(detail.id, "Cancelled"); setDetail(null); }}
+          onReschedule={() => { setRescheduling(detail); setDetail(null); }}
         />
       )}
       {confirmDelete && (
@@ -330,13 +366,70 @@ export default function FiberDispatch() {
         />
       )}
       {showBuildingForm && (
-        <BuildingFormModal onClose={() => setShowBuildingForm(false)}
-          onSave={(b) => { setBuildings((p) => [...p, { ...b, id: "b" + Date.now() }]); setShowBuildingForm(false); showToast("Building added"); }}
+        <BuildingFormModal initial={editingBuilding}
+          onClose={() => { setShowBuildingForm(false); setEditingBuilding(null); }}
+          onSave={(b) => {
+            if (b.id) {
+              setBuildings((p) => p.map((x) => (x.id === b.id ? b : x)));
+              showToast("Building updated");
+            } else {
+              setBuildings((p) => [...p, { ...b, id: "b" + Date.now() }]);
+              showToast("Building added");
+            }
+            setShowBuildingForm(false);
+            setEditingBuilding(null);
+          }}
+        />
+      )}
+      {confirmDeleteBuilding && (
+        <ConfirmDialog
+          title="Delete this building?"
+          body={`This will remove ${confirmDeleteBuilding.name} from your building list. Existing appointments will keep showing it as an unlinked reference.`}
+          onCancel={() => setConfirmDeleteBuilding(null)}
+          onConfirm={() => {
+            setBuildings((p) => p.filter((x) => x.id !== confirmDeleteBuilding.id));
+            setConfirmDeleteBuilding(null);
+            showToast("Building deleted");
+          }}
         />
       )}
       {showTechForm && (
         <TechFormModal onClose={() => setShowTechForm(false)}
           onSave={(t) => { setTechs((p) => [...p, { ...t, id: "t" + Date.now() }]); setShowTechForm(false); showToast("Technician added"); }}
+        />
+      )}
+      {showPlanForm && (
+        <PlanFormModal initial={editingPlan}
+          onClose={() => { setShowPlanForm(false); setEditingPlan(null); }}
+          onSave={(p) => {
+            if (p.id) {
+              setPlans((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+              showToast("Plan updated");
+            } else {
+              setPlans((prev) => [...prev, { ...p, id: "p" + Date.now() }]);
+              showToast("Plan added");
+            }
+            setShowPlanForm(false);
+            setEditingPlan(null);
+          }}
+        />
+      )}
+      {confirmDeletePlan && (
+        <ConfirmDialog
+          title="Delete this plan?"
+          body={`This will remove ${confirmDeletePlan.name} from the plan list. Existing appointments keep their recorded plan name.`}
+          onCancel={() => setConfirmDeletePlan(null)}
+          onConfirm={() => {
+            setPlans((prev) => prev.filter((x) => x.id !== confirmDeletePlan.id));
+            setConfirmDeletePlan(null);
+            showToast("Plan deleted");
+          }}
+        />
+      )}
+      {rescheduling && (
+        <RescheduleModal appointment={rescheduling} techs={techs}
+          onClose={() => setRescheduling(null)}
+          onSave={(payload) => rescheduleAppointment(rescheduling.id, payload)}
         />
       )}
 
@@ -351,7 +444,7 @@ export default function FiberDispatch() {
 
 /* ============================== DASHBOARD VIEW =============================== */
 function DashboardView(props) {
-  const { stats, upcoming, overdue, tomorrowJobs, buildings, techs, dark, onOpen, onEdit, onDelete, onComplete,
+  const { stats, upcoming, overdue, tomorrowJobs, buildings, techs, dark, onOpen, onEdit, onDelete, onComplete, onReschedule,
     search, setSearch, statusFilter, setStatusFilter, buildingFilter, setBuildingFilter, techFilter, setTechFilter, filtered } = props;
 
   const week = Array.from({ length: 7 }, (_, i) => addDays(addDays(today, -3), i));
@@ -422,7 +515,7 @@ function DashboardView(props) {
             <h3 className="font-semibold text-sm text-slate-700">Schedule</h3>
             <span className="text-xs text-slate-400">{filtered.length} results</span>
           </div>
-          <ScheduleTable rows={filtered.slice(0, 8)} buildings={buildings} techs={techs} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} onComplete={onComplete} compact />
+          <ScheduleTable rows={filtered.slice(0, 8)} buildings={buildings} techs={techs} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} onComplete={onComplete} onReschedule={onReschedule} compact />
         </div>
 
         <div className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100">
@@ -471,18 +564,18 @@ function FilterBar({ search, setSearch, statusFilter, setStatusFilter, buildingF
 
 /* ============================== SCHEDULES VIEW =============================== */
 function SchedulesView(props) {
-  const { filtered, buildings, techs, onOpen, onEdit, onDelete, onComplete } = props;
+  const { filtered, buildings, techs, onOpen, onEdit, onDelete, onComplete, onReschedule } = props;
   return (
     <div className="space-y-5">
       <FilterBar {...props} />
       <div className="rounded-2xl bg-white shadow-sm border border-slate-100 overflow-hidden">
-        <ScheduleTable rows={filtered} buildings={buildings} techs={techs} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} onComplete={onComplete} />
+        <ScheduleTable rows={filtered} buildings={buildings} techs={techs} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} onComplete={onComplete} onReschedule={onReschedule} />
       </div>
     </div>
   );
 }
 
-function ScheduleTable({ rows, buildings, techs, onOpen, onEdit, onDelete, onComplete, compact }) {
+function ScheduleTable({ rows, buildings, techs, onOpen, onEdit, onDelete, onComplete, onReschedule, compact }) {
   if (rows.length === 0) {
     return (
       <div className="py-16 text-center">
@@ -523,6 +616,7 @@ function ScheduleTable({ rows, buildings, techs, onOpen, onEdit, onDelete, onCom
               <td className="px-5 py-3">
                 <div className="flex items-center justify-end gap-1.5">
                   <IconBtn onClick={() => onOpen(a)} title="View"><Eye size={14} /></IconBtn>
+                  <IconBtn onClick={() => onReschedule(a)} title="Reschedule"><CalendarClock size={14} /></IconBtn>
                   <IconBtn onClick={() => onEdit(a)} title="Edit"><Pencil size={14} /></IconBtn>
                   <IconBtn onClick={() => onComplete(a)} title="Mark completed"><CheckCircle2 size={14} /></IconBtn>
                   <IconBtn onClick={() => onDelete(a)} title="Delete" danger><Trash2 size={14} /></IconBtn>
@@ -674,7 +768,7 @@ function TechniciansView({ techs, appointments, onAdd, onCycleStatus }) {
 }
 
 /* ============================== BUILDINGS VIEW ================================ */
-function BuildingsView({ buildings, appointments, onAdd }) {
+function BuildingsView({ buildings, appointments, onAdd, onEdit, onDelete }) {
   return (
     <div className="space-y-5">
       <div className="flex justify-end">
@@ -693,9 +787,15 @@ function BuildingsView({ buildings, appointments, onAdd }) {
           const count = appointments.filter((a) => a.building === b.id).length;
           return (
             <div key={b.id} className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100">
-              <div className="flex items-center gap-2.5 mb-2">
-                <div className="rounded-lg p-2" style={{ backgroundColor: C.accent + "1A" }}><Building2 size={16} style={{ color: C.accent }} /></div>
-                <p className="font-medium text-slate-700 text-sm">{b.name}</p>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="rounded-lg p-2" style={{ backgroundColor: C.accent + "1A" }}><Building2 size={16} style={{ color: C.accent }} /></div>
+                  <p className="font-medium text-slate-700 text-sm">{b.name}</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <IconBtn onClick={() => onEdit(b)} title="Edit building"><Pencil size={14} /></IconBtn>
+                  <IconBtn onClick={() => onDelete(b)} title="Delete building" danger><Trash2 size={14} /></IconBtn>
+                </div>
               </div>
               <p className="text-xs text-slate-400 flex items-center gap-1 mb-1"><MapPin size={11} />{b.address}</p>
               <p className="text-xs text-slate-500">{b.towers} tower{b.towers > 1 ? "s" : ""} · {count} job{count !== 1 ? "s" : ""} on record</p>
@@ -708,12 +808,51 @@ function BuildingsView({ buildings, appointments, onAdd }) {
   );
 }
 
+/* ================================ PLANS VIEW =================================== */
+function PlansView({ plans, appointments, onAdd, onEdit, onDelete }) {
+  return (
+    <div className="space-y-5">
+      <div className="flex justify-end">
+        <button onClick={onAdd} className="flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium text-white" style={{ backgroundColor: C.accent }}>
+          <Plus size={15} /> Add Plan
+        </button>
+      </div>
+      {plans.length === 0 && (
+        <div className="rounded-2xl bg-white p-10 text-center border border-slate-100">
+          <Signal size={28} className="mx-auto text-slate-300 mb-2" />
+          <p className="text-sm text-slate-400">No internet plans yet. Add one so it appears in the schedule form.</p>
+        </div>
+      )}
+      <div className="rounded-2xl bg-white shadow-sm border border-slate-100 overflow-hidden">
+        {plans.map((p, i) => {
+          const count = appointments.filter((a) => a.plan === p.name).length;
+          return (
+            <div key={p.id} className={`flex items-center justify-between px-5 py-3.5 ${i !== plans.length - 1 ? "border-b border-slate-50" : ""}`}>
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg p-2" style={{ backgroundColor: C.accent + "1A" }}><Signal size={14} style={{ color: C.accent }} /></div>
+                <div>
+                  <p className="text-sm font-medium text-slate-700">{p.name}</p>
+                  <p className="text-xs text-slate-400">{count} appointment{count !== 1 ? "s" : ""} using this plan</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <IconBtn onClick={() => onEdit(p)} title="Edit plan"><Pencil size={14} /></IconBtn>
+                <IconBtn onClick={() => onDelete(p)} title="Delete plan" danger><Trash2 size={14} /></IconBtn>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ============================ SCHEDULE FORM MODAL ============================= */
-function ScheduleFormModal({ initial, buildings, techs, onClose, onSave }) {
+function ScheduleFormModal({ initial, buildings, techs, plans, onClose, onSave }) {
   const [f, setF] = useState(initial || {
     customer: "", phone: "", alt: "", email: "",
     building: buildings[0]?.id || "", tower: "", unit: "", floor: "", address: "",
-    date: todayStr, time: "09:00", service: svcTypes[0], plan: plans[0], notes: "",
+    date: todayStr, time: "09:00", service: svcTypes[0], plan: plans[0]?.name || "", notes: "",
     tech: techs[0]?.id || "", priority: "Normal", status: "Scheduled",
   });
   const [errors, setErrors] = useState({});
@@ -758,7 +897,7 @@ function ScheduleFormModal({ initial, buildings, techs, onClose, onSave }) {
             <select value={f.service} onChange={set("service")} className={inputCls()}>{svcTypes.map((s) => <option key={s}>{s}</option>)}</select>
           </Field>
           <Field label="Internet Plan">
-            <select value={f.plan} onChange={set("plan")} className={inputCls()}>{plans.map((p) => <option key={p}>{p}</option>)}</select>
+            <select value={f.plan} onChange={set("plan")} className={inputCls()}>{plans.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}</select>
           </Field>
           <Field label="Notes"><textarea value={f.notes} onChange={set("notes")} rows={2} className={inputCls()} /></Field>
         </Section>
@@ -801,7 +940,7 @@ function Field({ label, error, children }) {
 }
 
 /* =============================== DETAIL MODAL ================================= */
-function DetailModal({ appointment: a, buildings, techs, onClose, onEdit, onComplete, onCancel }) {
+function DetailModal({ appointment: a, buildings, techs, onClose, onEdit, onComplete, onCancel, onReschedule }) {
   const timeline = [
     { label: "Created", done: true },
     { label: "Confirmed", done: ["Confirmed", "In Progress", "Completed"].includes(a.status) },
@@ -857,6 +996,7 @@ function DetailModal({ appointment: a, buildings, techs, onClose, onEdit, onComp
       <div className="flex flex-wrap justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
         <button onClick={() => window.print()} className="rounded-lg px-4 py-2 text-sm text-slate-500 border border-slate-200">Print Job Order</button>
         <button onClick={onCancel} className="rounded-lg px-4 py-2 text-sm border" style={{ color: C.cancelled, borderColor: "#F3D3D8" }}>Cancel Appointment</button>
+        <button onClick={onReschedule} className="rounded-lg px-4 py-2 text-sm text-slate-600 border border-slate-200 flex items-center gap-1.5"><CalendarClock size={14} />Reschedule</button>
         <button onClick={onEdit} className="rounded-lg px-4 py-2 text-sm text-slate-600 border border-slate-200">Edit</button>
         <button onClick={onComplete} className="rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ backgroundColor: C.completed }}>Complete Installation</button>
       </div>
@@ -865,10 +1005,10 @@ function DetailModal({ appointment: a, buildings, techs, onClose, onEdit, onComp
 }
 
 /* ============================ SUPPORTING MODALS =============================== */
-function BuildingFormModal({ onClose, onSave }) {
-  const [f, setF] = useState({ name: "", address: "", towers: 1, notes: "" });
+function BuildingFormModal({ initial, onClose, onSave }) {
+  const [f, setF] = useState(initial || { name: "", address: "", towers: 1, notes: "" });
   return (
-    <ModalShell onClose={onClose} title="Add Building">
+    <ModalShell onClose={onClose} title={initial ? "Edit Building" : "Add Building"}>
       <div className="space-y-3">
         <Field label="Building Name"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className={inputCls()} /></Field>
         <Field label="Address"><input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} className={inputCls()} /></Field>
@@ -877,7 +1017,56 @@ function BuildingFormModal({ onClose, onSave }) {
       </div>
       <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
         <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-500 border border-slate-200">Cancel</button>
-        <button onClick={() => f.name && onSave(f)} className="rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ backgroundColor: C.accent }}>Save Building</button>
+        <button onClick={() => f.name && onSave(f)} className="rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ backgroundColor: C.accent }}>
+          {initial ? "Save Changes" : "Save Building"}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function PlanFormModal({ initial, onClose, onSave }) {
+  const [f, setF] = useState(initial || { name: "" });
+  return (
+    <ModalShell onClose={onClose} title={initial ? "Edit Internet Plan" : "Add Internet Plan"}>
+      <div className="space-y-3">
+        <Field label="Plan Name"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Fiber 300 Mbps" className={inputCls()} /></Field>
+      </div>
+      <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+        <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-500 border border-slate-200">Cancel</button>
+        <button onClick={() => f.name.trim() && onSave({ ...f, name: f.name.trim() })} className="rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ backgroundColor: C.accent }}>
+          {initial ? "Save Changes" : "Save Plan"}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function RescheduleModal({ appointment, techs, onClose, onSave }) {
+  const [date, setDate] = useState(appointment.date);
+  const [time, setTime] = useState(appointment.time);
+  const [tech, setTech] = useState(appointment.tech);
+  return (
+    <ModalShell onClose={onClose} title="Reschedule Appointment" subtitle={`${appointment.customer} · ${appointment.jo}`}>
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="New Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls()} /></Field>
+          <Field label="New Time"><input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={inputCls()} /></Field>
+        </div>
+        <Field label="Technician">
+          <select value={tech} onChange={(e) => setTech(e.target.value)} className={inputCls()}>
+            {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </Field>
+        {["Cancelled", "No Show"].includes(appointment.status) && (
+          <p className="text-xs text-slate-400">This will reopen the appointment with status "Scheduled".</p>
+        )}
+      </div>
+      <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+        <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-500 border border-slate-200">Cancel</button>
+        <button onClick={() => date && time && onSave({ date, time, tech })} className="rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ backgroundColor: C.accent }}>
+          Confirm Reschedule
+        </button>
       </div>
     </ModalShell>
   );
